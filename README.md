@@ -1,10 +1,6 @@
 # Piper
  Creates a local or remote port forwarding through named pipes.
 
-## DESCRIPTION
-
-Creates a local or remote port forwarding through named pipes.
-
 ## EXAMPLES
 
 ```
@@ -22,3 +18,4 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
 
 ##Issues
 Works well with  stateful protocols such as RDP and SSH. Still unstable with HTTP.
+Does not support authentication yet, all pipes are public.
