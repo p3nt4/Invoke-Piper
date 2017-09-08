@@ -131,10 +131,10 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
     }
     finally {
 
-        if ($serv -ne $null) {
-            $serv.Close()
-            $serv.Dispose()
-            $serv = $null
+        if ($tcpConnection -ne $null) {
+            $tcpConnection.Close()
+            $tcpConnection.Dispose()
+            $tcpConnection = $null
         }
         if ($inPipe -ne $null) {
             #$inPipe.Disconnect()
