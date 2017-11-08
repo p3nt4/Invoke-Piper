@@ -1,5 +1,5 @@
 # Piper
- Creates a local or remote port forwarding through named pipes.
+ Creates a local or remote port forwarding through SMB pipes.
 
 ## EXAMPLES
 
