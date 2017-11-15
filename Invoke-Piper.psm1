@@ -17,10 +17,10 @@ Invoke-PiperClient -destPipe testPipe -pipeHost 192.168.1.1 -bindPort 33389
 
 Creates a local port forwarding through pipe testPipe: -L 33389:127.0.0.1:3389
 
-Invoke-PiperServer -remote -bindPipe testPipe  -bindPort 33389
+Invoke-PiperServer -remote -bindPipe testPipe  -bindPort 33389 -security Administrators
 Invoke-PiperClient -remote -destPipe testPipe -pipeHost 192.168.1.1 -destHost 127.0.0.1 -destPort 3389
 
-Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
+Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
 #>
 
 [ScriptBlock]$CliConnectionMgr = {
@@ -30,7 +30,14 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
     $pipeHost=$vars.pipeHost
     $Script = {
 	    param($vars)
-        $vars.inStream.CopyToAsync($vars.outStream)    
+        try{
+            $vars.inStream.CopyTo($vars.outStream)
+        }
+        catch{}
+        finally{
+            $vars.pipe.Close()
+            $vars.pipe.Dispose()
+        }    
     }
      try{
         $inPipeName= -Join($destPipe,'.in')
@@ -44,25 +51,20 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
                                                                         [System.Security.Principal.TokenImpersonationLevel]::Impersonation)
         $outPipe.connect()
         $tcpStream = $tcpConnection.GetStream() 
-        $vars2 = [PSCustomObject]@{"inStream"=$outPipe;"outStream"=$tcpStream}
+        $vars2 = [PSCustomObject]@{"inStream"=$outPipe;"outStream"=$tcpStream;"pipe"=$outPipe}
         $PS = [PowerShell]::Create()
         $PS.AddScript($Script).AddArgument($vars2) | Out-Null
         [System.IAsyncResult]$AsyncJobResult = $null
 
-        $vars3 = [PSCustomObject]@{"inStream"=$tcpStream;"outStream"=$inPipe}
+        $vars3 = [PSCustomObject]@{"inStream"=$tcpStream;"outStream"=$inPipe ;"pipe"=$inPipe}
         $PS2 = [PowerShell]::Create()
         $PS2.AddScript($Script).AddArgument($vars3) | Out-Null
         [System.IAsyncResult]$AsyncJobResult2 = $null
 
 	    $AsyncJobResult = $PS.BeginInvoke()
         $AsyncJobResult2 = $PS2.BeginInvoke()
-	    while($tcpConnection.Connected -and $inPipe.IsConnected -and $outPipe.IsConnected){
-            sleep -m 100;
-        }
     }
     catch {
-    }
-    finally {
         if ($tcpConnection -ne $null) {
             $tcpConnection.Close()
             $tcpConnection.Dispose()
@@ -93,25 +95,30 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
 [ScriptBlock]$SrvConnectionMgr = {
     param($vars)
     $bindPipe=$vars.bindPipe
+    $PipeSecurity=$vars.pipeSecurity
     $tcpConnection=$vars.tcpConnection
     $Script = {
-        param($vars)
-        $vars.inStream.CopyToAsync($vars.outStream)
+	    param($vars)
+        try{
+            $vars.inStream.CopyTo($vars.outStream)
+        }
+        catch{}
+        finally{
+            $vars.pipe.Close()
+            $vars.pipe.Dispose()
+        }    
     }
     try
     {
         $inPipeName= -Join($bindPipe,'.in')
-        $PipeSecurity = new-object System.IO.Pipes.PipeSecurity
-        $AccessRule = New-Object System.IO.Pipes.PipeAccessRule( "Everyone", "FullControl", "Allow" )
-        $PipeSecurity.AddAccessRule($AccessRule)
         $inPipe= new-object System.IO.Pipes.NamedPipeServerStream($inPipeName,"InOut",100, "Byte", "Asynchronous", 32768, 32768, $PipeSecurity)
         $inPipe.WaitForConnection()
         $outPipeName= -Join($bindPipe,'.out')
         $outPipe= new-object System.IO.Pipes.NamedPipeServerStream($outPipeName, "InOut",100, "Byte", "Asynchronous", 32768, 32768, $PipeSecurity)
         $outPipe.WaitForConnection()
         $srvStream= $tcpConnection.GetStream() 
-        $vars = [PSCustomObject]@{"inStream"=$srvStream;"outStream"=$outPipe}
-        $vars2 = [PSCustomObject]@{"inStream"=$inPipe;"outStream"=$srvStream}
+        $vars = [PSCustomObject]@{"inStream"=$srvStream;"outStream"=$outPipe;"pipe"=$outPipe}
+        $vars2 = [PSCustomObject]@{"inStream"=$inPipe;"outStream"=$srvStream;"pipe"=$inPipe}
         $PS = [PowerShell]::Create()
         $PS.AddScript($Script).AddArgument($vars) | Out-Null
         [System.IAsyncResult]$AsyncJobResult = $null
@@ -120,27 +127,19 @@ Creates a remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
         [System.IAsyncResult]$AsyncJobResult2 = $null
         $AsyncJobResult = $PS.BeginInvoke()
         $AsyncJobResult2 = $PS2.BeginInvoke()
-        while($tcpConnection.Connected -and $inPipe.IsConnected -and $outPipe.IsConnected){
-            sleep -m 100;
-        }
     }
     catch {
-    }
-    finally {
-
         if ($serv -ne $null) {
             $serv.Close()
             $serv.Dispose()
             $serv = $null
         }
         if ($inPipe -ne $null) {
-            #$inPipe.Disconnect()
             $inPipe.Close()
             $inPipe.Dispose()
             $inPipe = $null
         }
         if ($outPipe -ne $null) {
-            #$outPipe.Disconnect()
             $outPipe.Close()
             $outPipe.Dispose()
             $outPipe = $null
@@ -163,6 +162,8 @@ function Invoke-PiperServer{
 
             [String]$destHost,
 
+            [String]$security = "Everyone",
+
             [Int]$destPort,
 
             [String]$bindIP = "0.0.0.0",
@@ -176,7 +177,7 @@ function Invoke-PiperServer{
         $enc = [system.Text.Encoding]::UTF8
         $clientBuffer = new-object System.Byte[] 16
         $PipeSecurity = new-object System.IO.Pipes.PipeSecurity
-        $AccessRule = New-Object System.IO.Pipes.PipeAccessRule( "Everyone", "FullControl", "Allow" )
+        $AccessRule = New-Object System.IO.Pipes.PipeAccessRule( $security, "FullControl", "Allow" )
         $PipeSecurity.AddAccessRule($AccessRule)
         $pipe= new-object System.IO.Pipes.NamedPipeServerStream($bindPipe,"InOut",100, "Byte", "Asynchronous", 32768, 32768, $PipeSecurity)
         write-host "Waiting for a connection on management pipe: $bindPipe..."
@@ -186,10 +187,9 @@ function Invoke-PiperServer{
             while($pipe.IsConnected){
                 $pipe.read($clientBuffer,0,16) | Out-Null
                 $tempPipe = [System.Text.Encoding]::ASCII.GetString($clientBuffer, 0, 16)
-                #Write-Host "Temporary pipename is: $tempPipe"
                 Write-Host "New Connection"
                 $serv = New-Object System.Net.Sockets.TcpClient($destHost, $destPort)
-                $vars = [PSCustomObject]@{"tcpConnection"=$serv;"bindPipe"=$tempPipe}
+                $vars = [PSCustomObject]@{"tcpConnection"=$serv;"bindPipe"=$tempPipe;"pipeSecurity"=$PipeSecurity}
                 $PS3 = [PowerShell]::Create()
                 $PS3.AddScript($SrvConnectionMgr).AddArgument($vars) | Out-Null
                 [System.IAsyncResult]$AsyncJobResult3 = $null
@@ -198,16 +198,14 @@ function Invoke-PiperServer{
         }else{
             $listener = new-object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse($bindIP), $bindPort)
             $listener.start()
-            $destIp = Get-IpAddress $destHost
             write-host "Listening on port $bindPort..."
             while($pipe.IsConnected){
                 $client = $listener.AcceptTcpClient()
                 $tempPipe = Get-RandomPipeName
                 $clientBuffer = $enc.GetBytes($tempPipe) 
-                #Write-Host "Temporary pipename is: $tempPipe"
                 Write-Host "New Connection"
                 $pipe.Write($clientBuffer,0,16)
-                $vars = [PSCustomObject]@{"tcpConnection"=$client;"bindPipe"=$tempPipe}
+                $vars = [PSCustomObject]@{"tcpConnection"=$client;"bindPipe"=$tempPipe;"security"=$security}
                 $PS3 = [PowerShell]::Create()
                 $PS3.AddScript($SrvConnectionMgr).AddArgument($vars) | Out-Null
                 [System.IAsyncResult]$AsyncJobResult3 = $null
@@ -256,7 +254,6 @@ function Invoke-PiperClient{
     ) 
     $clientBuffer = new-object System.Byte[] 16
     $enc = [system.Text.Encoding]::UTF8
-    $pipeHost = Get-IpAddress $pipeHost
     try{
         write-host "Attempting to connect to $pipeHost through management pipe: $destPipe"
         $pipe= new-object System.IO.Pipes.NamedPipeClientStream($pipeHost, $destPipe, [System.IO.Pipes.PipeDirection]::InOut,
@@ -282,11 +279,11 @@ function Invoke-PiperClient{
                 }
             }
         else{
-            $destIp = Get-IpAddress $destHost
             while($pipe.IsConnected){
                 $pipe.read($clientBuffer,0,16) | Out-Null
+                Write-Host "New Connection"
                 $tempPipe = [System.Text.Encoding]::ASCII.GetString($clientBuffer, 0, 16)
-                $serv = New-Object System.Net.Sockets.TcpClient($destIp, $destPort)
+                $serv = New-Object System.Net.Sockets.TcpClient($destHost, $destPort)
                 $vars = [PSCustomObject]@{"tcpConnection"=$serv;"destPipe"= $tempPipe;"pipeHost"=$pipeHost}
                 $PS3 = [PowerShell]::Create()
                 $PS3.AddScript($CliConnectionMgr).AddArgument($vars) | Out-Null
@@ -319,17 +316,6 @@ function Invoke-PiperClient{
 function Get-RandomPipeName{
     $text = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 16 | % {[char]$_})
     return $text
-}
-
-function Get-IpAddress{
-    param($ip)
-    IF ($ip -as [ipaddress]){
-        return $ip
-    }else{
-        $ip2 = [System.Net.Dns]::GetHostAddresses($ip)[0].IPAddressToString;
-        Write-Host "$ip resolved to $ip2"
-    }
-    return $ip2
 }
 
 export-modulemember -function Invoke-PiperServer
