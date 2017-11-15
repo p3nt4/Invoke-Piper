@@ -17,3 +17,6 @@ CLIENT: net use \\serverIP /USER:User (OPTIONAL)
 CLIENT: Invoke-PiperClient -remote -destPipe testPipe -pipeHost serverIP -destHost 127.0.0.1 -destPort 3389
 ```
 Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127.0.0.1:3389
+
+## Issues
+Protocols requiring a big amount of parallel connections may exhaust all named pipes.
