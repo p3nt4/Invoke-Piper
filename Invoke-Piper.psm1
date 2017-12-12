@@ -65,29 +65,7 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
             $inPipe.Dispose()
         } 
     }
-    catch {
-        if ($inPipe -ne $null) {
-            $inPipe.Close()
-            $inPipe.Dispose()
-            $inPipe = $null
-        }
-        if ($outPipe -ne $null) {
-            $outPipe.Close()
-            $outPipe.Dispose()
-            $outPipe = $null
-        }
-    }
-    finally{
-        if ($tcpConnection -ne $null) {
-            $tcpConnection.Close()
-            $tcpConnection.Dispose()
-            $tcpConnection = $null
-        }
-        if ($PS -ne $null -and $AsyncJobResult -ne $null) {
-            $PS.EndInvoke($AsyncJobResult) | Out-Null
-            $PS.Dispose()
-        }
-    }
+    catch {}
 }
 
 
@@ -130,33 +108,10 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
             $inPipe.Disconnect()
             $inPipe.Close()
             $inPipe.Dispose()
+            $inPipe = $null
         } 
     }
     catch {
-        if ($inPipe -ne $null) {
-            $inPipe.Disconnect()
-            $inPipe.Close()
-            $inPipe.Dispose()
-            $inPipe = $null
-        }
-        if ($outPipe -ne $null) {
-            $outPipe.Disconnect()
-            $outPipe.Close()
-            $outPipe.Dispose()
-            $outPipe = $null
-        }
-    }
-    finally{
-        if($PS -ne $null -and $AsyncJobResult -ne $null) {
-            $PS.EndInvoke($AsyncJobResult) | Out-Null
-            $PS.Dispose()
-        }
-        if ($serv -ne $null) {
-            $serv.Close()
-            $serv.Dispose()
-            $serv = $null
-        }
-    
     }
 }
 
