@@ -55,21 +55,17 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
         $PS = [PowerShell]::Create()
         $PS.AddScript($Script).AddArgument($vars2) | Out-Null
         [System.IAsyncResult]$AsyncJobResult = $null
-
-        $vars3 = [PSCustomObject]@{"inStream"=$tcpStream;"outStream"=$inPipe ;"pipe"=$inPipe}
-        $PS2 = [PowerShell]::Create()
-        $PS2.AddScript($Script).AddArgument($vars3) | Out-Null
-        [System.IAsyncResult]$AsyncJobResult2 = $null
-
 	    $AsyncJobResult = $PS.BeginInvoke()
-        $AsyncJobResult2 = $PS2.BeginInvoke()
+        try{
+            $tcpStream.CopyTo($inPipe)
+        }
+        catch{}
+        finally{
+            $inPipe.Close()
+            $inPipe.Dispose()
+        } 
     }
     catch {
-        if ($tcpConnection -ne $null) {
-            $tcpConnection.Close()
-            $tcpConnection.Dispose()
-            $tcpConnection = $null
-        }
         if ($inPipe -ne $null) {
             $inPipe.Close()
             $inPipe.Dispose()
@@ -80,13 +76,16 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
             $outPipe.Dispose()
             $outPipe = $null
         }
+    }
+    finally{
+        if ($tcpConnection -ne $null) {
+            $tcpConnection.Close()
+            $tcpConnection.Dispose()
+            $tcpConnection = $null
+        }
         if ($PS -ne $null -and $AsyncJobResult -ne $null) {
             $PS.EndInvoke($AsyncJobResult) | Out-Null
             $PS.Dispose()
-        }
-        if ($PS2 -ne $null -and $AsyncJobResult2 -ne $null) {
-            $PS2.EndInvoke($AsyncJobResult2) | Out-Null
-            $PS2.Dispose()
         }
     }
 }
@@ -118,40 +117,44 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
         $outPipe.WaitForConnection()
         $srvStream= $tcpConnection.GetStream() 
         $vars = [PSCustomObject]@{"inStream"=$srvStream;"outStream"=$outPipe;"pipe"=$outPipe}
-        $vars2 = [PSCustomObject]@{"inStream"=$inPipe;"outStream"=$srvStream;"pipe"=$inPipe}
         $PS = [PowerShell]::Create()
         $PS.AddScript($Script).AddArgument($vars) | Out-Null
         [System.IAsyncResult]$AsyncJobResult = $null
-        $PS2 = [PowerShell]::Create()
-        $PS2.AddScript($Script).AddArgument($vars2) | Out-Null
-        [System.IAsyncResult]$AsyncJobResult2 = $null
         $AsyncJobResult = $PS.BeginInvoke()
-        $AsyncJobResult2 = $PS2.BeginInvoke()
+        try{
+            $inPipe.CopyTo($srvStream)
+        }
+        catch{}
+        finally{
+            $inPipe.Disconnect()
+            $inPipe.Close()
+            $inPipe.Dispose()
+        } 
     }
     catch {
-        if ($serv -ne $null) {
-            $serv.Close()
-            $serv.Dispose()
-            $serv = $null
-        }
         if ($inPipe -ne $null) {
             $inPipe.Close()
             $inPipe.Dispose()
             $inPipe = $null
         }
         if ($outPipe -ne $null) {
+            $outPipe.Disconnect()
             $outPipe.Close()
             $outPipe.Dispose()
             $outPipe = $null
         }
-        if ($PS -ne $null -and $AsyncJobResult -ne $null) {
+    }
+    finally{
+        if($PS -ne $null -and $AsyncJobResult -ne $null) {
             $PS.EndInvoke($AsyncJobResult) | Out-Null
             $PS.Dispose()
         }
-        if ($PS2 -ne $null -and $AsyncJobResult2 -ne $null) {
-            $PS2.EndInvoke($AsyncJobResult2) | Out-Null
-            $PS2.Dispose() 
+        if ($serv -ne $null) {
+            $serv.Close()
+            $serv.Dispose()
+            $serv = $null
         }
+    
     }
 }
 
