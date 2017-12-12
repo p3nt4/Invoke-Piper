@@ -134,7 +134,7 @@ Creates an admin only remote port forwarding through pipe testPipe: -R 33389:127
     }
     catch {
         if ($inPipe -ne $null) {
-            $outPipe.Disconnect()
+            $inPipe.Disconnect()
             $inPipe.Close()
             $inPipe.Dispose()
             $inPipe = $null
